@@ -1,0 +1,1090 @@
+\documentclass[12pt, a4paper]{article}
+
+% ── Encodage & langue ──────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+% ── Mise en page ───────────────────────────────────────────────────────────────
+\usepackage[top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm]{geometry}
+\usepackage{parskip}
+\usepackage{microtype}
+
+% ── Tableaux & figures ─────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{array}
+
+% ── Couleurs & code ────────────────────────────────────────────────────────────
+\usepackage{xcolor}
+\usepackage{listings}
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codegreen}{RGB}{0,128,0}
+\definecolor{codegray}{RGB}{128,128,128}
+\definecolor{accent}{RGB}{30,100,200}
+\definecolor{highlight}{RGB}{255,243,220}
+\definecolor{darkgreen}{RGB}{0,120,0}
+\definecolor{darkred}{RGB}{180,0,0}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codegray},
+  keywordstyle=\color{accent}\bfseries,
+  stringstyle=\color{codegreen},
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  captionpos=b,
+  language=Python
+}
+
+% ── Boîtes colorées ────────────────────────────────────────────────────────────
+\usepackage{tcolorbox}
+\tcbuselibrary{skins}
+\newtcolorbox{definitionbox}{
+  colback=blue!5!white,
+  colframe=accent,
+  fonttitle=\bfseries,
+  title=Définition,
+  left=6pt, right=6pt
+}
+\newtcolorbox{resultbox}{
+  colback=green!5!white,
+  colframe=darkgreen,
+  fonttitle=\bfseries,
+  left=6pt, right=6pt
+}
+
+% ── Maths ──────────────────────────────────────────────────────────────────────
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% ── Liens & méta ───────────────────────────────────────────────────────────────
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=accent,
+  urlcolor=accent,
+  pdftitle={Prédiction de notes d'hôtels — Rapport},
+  pdfauthor={},
+}
+
+% ── En-tête / pied de page ─────────────────────────────────────────────────────
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small Prédiction de notes d'hôtels}
+\lhead{\small NLP — Rapport de projet}
+\cfoot{\thepage}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── Page de titre ──────────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\Huge\bfseries Prédiction de notes d'hôtels\\[0.4em]
+  à partir de commentaires textuels\par}
+  \vspace{1cm}
+  {\Large Rapport de projet — NLP\par}
+  \vspace{2cm}
+  \rule{\linewidth}{0.5pt}\\[0.5em]
+  {\large\textit{Approches comparées :}\\[0.3em]
+  TF-IDF \quad $\rightarrow$ \quad Sentence Transformers \quad $\rightarrow$ \quad RoBERTa fine-tuné\par}
+  \rule{\linewidth}{0.5pt}
+  \vfill
+  {\large Mars 2026\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Présentation du projet}
+
+\subsection{Objectif}
+
+L'objectif de ce projet est de prédire automatiquement la note attribuée par un client
+(de 1 à 5 étoiles) à partir du seul texte de son commentaire sur un hôtel, sans connaître
+la note à l'avance.
+
+Il s'agit d'un problème de \textbf{classification de texte supervisée} en \textbf{5 classes}
+dans le domaine du \textbf{NLP} (Natural Language Processing — Traitement Automatique du Langage).
+La classification est dite \textit{supervisée} car le modèle apprend à partir d'exemples
+déjà étiquetés (texte + note connue), et \textit{multiclasse} car il y a 5 catégories
+distinctes à prédire (et non 2 comme en classification binaire).
+
+\subsection{Données}
+
+Les données sont réparties en trois fichiers CSV, chacun ayant un rôle précis :
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{llr}
+    \toprule
+    \textbf{Fichier} & \textbf{Usage} & \textbf{Exemples} \\
+    \midrule
+    \texttt{train\_hotel\_reviews.csv} & Entraîner les modèles & 18\,491 \\
+    \texttt{valid\_hotel\_reviews.csv} & Évaluer pendant le développement & 1\,000 \\
+    \texttt{test\_hotel\_reviews.csv}  & Évaluation finale unique & 1\,000 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Répartition des données}
+\end{table}
+
+Chaque ligne contient deux colonnes :
+\begin{itemize}
+  \item \texttt{Review} : texte libre du commentaire (en anglais)
+  \item \texttt{Rating} : note entière de 1 à 5 étoiles
+\end{itemize}
+
+La règle fondamentale respectée tout au long du projet : le jeu de \textbf{test} n'est
+consulté qu'une seule fois à la toute fin, après avoir figé le modèle définitif.
+Toutes les décisions de développement (choix des hyperparamètres, comparaison des modèles)
+sont prises sur le jeu de \textbf{validation}.
+
+\subsection{Distribution des notes — Déséquilibre des classes}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{crc}
+    \toprule
+    \textbf{Note} & \textbf{Nb exemples (train)} & \textbf{Proportion} \\
+    \midrule
+    1\,$\star$ & 1\,310 &  7.1\,\% \\
+    2\,$\star$ & 1\,630 &  8.8\,\% \\
+    3\,$\star$ & 1\,982 & 10.7\,\% \\
+    4\,$\star$ & 5\,465 & 29.6\,\% \\
+    5\,$\star$ & 8\,104 & 43.8\,\% \\
+    \midrule
+    \textbf{Total} & \textbf{18\,491} & \textbf{100\,\%} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Distribution des notes dans le jeu d'entraînement}
+\end{table}
+
+Ce déséquilibre est le \textbf{défi principal} du projet : les notes 4\,$\star$ et
+5\,$\star$ représentent à elles seules 73\,\% des données. Un modèle naïf qui prédirait
+systématiquement 5\,$\star$ obtiendrait déjà 44\,\% d'accuracy (taux de bonnes prédictions)
+sans rien apprendre. Les classes 2\,$\star$ et 3\,$\star$ sont structurellement
+sous-représentées et donc difficiles à apprendre.
+
+\subsection{Pipeline général du projet}
+
+Voici la séquence complète depuis la donnée brute jusqu'à la prédiction finale :
+
+\begin{center}
+\ttfamily\small
+\begin{tabular}{c}
+\hline
+Texte brut + note (CSV) \\
+\hline
+$\downarrow$ \\
+\hline
+Prétraitement du texte \\
+(nettoyage ou texte brut selon l'approche) \\
+\hline
+$\downarrow$ \\
+\hline
+Représentation numérique du texte \\
+(TF-IDF / Sentence Transformers / Tokenisation BERT) \\
+\hline
+$\downarrow$ \\
+\hline
+Modèle de classification \\
+(LogReg / SVC / Réseau de neurones profond) \\
+\hline
+$\downarrow$ \\
+\hline
+Prédiction : note 1★ à 5★ \\
+\hline
+$\downarrow$ \\
+\hline
+Évaluation : Accuracy + F1 macro \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection{Métriques d'évaluation utilisées}
+
+Deux métriques complémentaires sont calculées sur chaque modèle :
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lp{10cm}}
+    \toprule
+    \textbf{Métrique} & \textbf{Définition} \\
+    \midrule
+    \textbf{Accuracy} (taux de bonnes prédictions) &
+    Proportion de notes exactement correctes parmi toutes les prédictions.
+    $\text{Accuracy} = \frac{\text{nb bonnes prédictions}}{\text{nb total}}$.
+    Peut être trompeuse si les classes sont déséquilibrées. \\[0.5em]
+    \textbf{F1 macro} (moyenne harmonique précision/rappel, à poids égal par classe) &
+    Pour chaque classe $c$, on calcule :
+    $\text{F1}_c = \frac{2 \times P_c \times R_c}{P_c + R_c}$
+    où $P_c$ (précision) = parmi les exemples prédits $c$, combien sont vraiment $c$ ?
+    et $R_c$ (rappel) = parmi les vrais $c$, combien a-t-on correctement identifiés ?
+    Le F1 macro est la moyenne de ces F1 sur les 5 classes — chaque classe compte
+    autant, qu'elle ait 54 ou 484 exemples. \\
+    \bottomrule
+  \end{tabular}
+  \caption{Métriques d'évaluation}
+\end{table}
+
+Le \textbf{F1 macro} est la métrique de référence car elle pénalise les modèles
+qui ignorent les classes rares (2\,$\star$, 3\,$\star$), ce que l'accuracy seule ne détecterait pas.
+
+\subsection{Plan de travail — Complexité croissante}
+
+Trois approches sont comparées, classées par complexité croissante :
+
+\begin{enumerate}
+  \item \textbf{TF-IDF + modèles classiques} — représentation par comptage de mots, classifieur linéaire \hfill \textit{[réalisé]}
+  \item \textbf{Sentence Transformers} — embeddings denses pré-entraînés, classifieur linéaire \hfill \textit{[réalisé]}
+  \item \textbf{Fine-tuning RoBERTa} — transformer profond entraîné sur nos données \hfill \textit{[réalisé]}
+\end{enumerate}
+
+Cette progression permet de quantifier le gain apporté par chaque niveau de complexité
+supplémentaire et de justifier l'usage d'architectures lourdes.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Étape 1 — Baseline TF-IDF + Modèles classiques}
+\label{sec:tfidf}
+
+\subsection{Principe et motivation}
+
+TF-IDF (\textit{Term Frequency–Inverse Document Frequency} — Fréquence du terme pondérée
+par l'inverse de sa fréquence dans les documents) est la représentation de texte classique
+en NLP. Chaque commentaire est transformé en un vecteur numérique : chaque dimension
+correspond à un mot du vocabulaire, et sa valeur mesure l'importance de ce mot dans ce document.
+
+La formule est :
+\begin{equation}
+  \text{TF-IDF}(t, d) =
+  \underbrace{\log(1 + f_{t,d})}_{\text{TF (fréquence du terme, avec lissage log)}}
+  \times
+  \underbrace{\log\frac{N}{|\{d : t \in d\}|}}_{\text{IDF (inverse de la fréquence documentaire)}}
+\end{equation}
+
+où $f_{t,d}$ est le nombre d'occurrences du terme $t$ dans le document $d$, et $N$ le nombre
+total de documents. Un mot rare mais présent dans un avis (ex: ``immaculate'') obtient un score
+élevé. Un mot très fréquent partout (ex: ``hotel'') obtient un score faible.
+
+\textbf{Limites fondamentales de TF-IDF :}
+\begin{itemize}
+  \item \textbf{Pas de contexte} : ``not good'' et ``very good'' ont les mêmes dimensions
+        actives, seuls les poids diffèrent — TF-IDF ne comprend pas la négation.
+  \item \textbf{Pas de sémantique} : ``great'' et ``excellent'' sont deux dimensions
+        entièrement distinctes, même s'ils signifient la même chose.
+  \item \textbf{Représentation creuse} (sparse) : un vecteur de 20\,000 dimensions
+        dont la grande majorité est à zéro (un commentaire n'utilise que quelques centaines
+        de mots différents sur 20\,000 possibles).
+\end{itemize}
+
+\subsection{Prétraitement du texte}
+
+Pour TF-IDF, un nettoyage \textbf{agressif} est appliqué avant la vectorisation.
+Ce nettoyage ne sera \textbf{pas} appliqué aux approches Transformers (qui gèrent le texte brut).
+
+\begin{lstlisting}[caption={Fonction de nettoyage pour TF-IDF}]
+def clean_text(text):
+    text = str(text)                      # Protection contre les valeurs NaN
+    text = text.lower()                   # "Hotel" et "hotel" -> meme token
+    text = re.sub(r'\d+', '', text)       # Supprimer les chiffres (peu informatifs)
+    text = text.translate(str.maketrans( # Supprimer la ponctuation
+        '', '', string.punctuation))
+    text = re.sub(r'\s+', ' ', text).strip()  # Normaliser les espaces
+    tokens = [w for w in text.split()
+              if w not in STOPWORDS]      # Supprimer les stopwords
+    return ' '.join(tokens)
+\end{lstlisting}
+
+\textbf{Justification de chaque étape :}
+\begin{itemize}
+  \item \textbf{Minuscules} : ``Hotel'', ``hotel'', ``HOTEL'' → même token, évite la redondance.
+  \item \textbf{Suppression des chiffres} : les numéros de chambre, années, prix varient
+        et n'apportent pas d'information sur la satisfaction.
+  \item \textbf{Suppression des stopwords} (mots très fréquents sans valeur informative :
+        ``the'', ``a'', ``is'', ``in'') : ces mots apparaissent dans presque tous les documents,
+        leur IDF est quasi nul — ils n'aident pas à discriminer les classes.
+  \item \textbf{Limite connue} : la suppression de ``not'' peut inverser le sens
+        (``not good'' → ``good'') — c'est une limite acceptée pour la baseline.
+\end{itemize}
+
+\subsection{Vectorisation TF-IDF}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lp{9cm}}
+    \toprule
+    \textbf{Paramètre} & \textbf{Valeur et justification} \\
+    \midrule
+    \texttt{max\_features=20000} &
+      Garder les 20\,000 termes les plus fréquents. Réduit la dimensionnalité,
+      supprime les mots ultra-rares (fautes de frappe, noms propres) qui
+      ne généralisent pas. \\
+    \texttt{ngram\_range=(1, 2)} &
+      Unigrammes (``good'', ``clean'') ET bigrammes (``not good'', ``very clean'').
+      Les bigrammes capturent les négations et expressions figées que les
+      unigrammes seuls ne peuvent représenter. \\
+    \texttt{sublinear\_tf=True} &
+      Applique $\log(1 + \text{tf})$ — atténue l'effet des mots très répétés.
+      ``clean'' mentionné 10 fois ne vaut pas 10$\times$ ``clean'' mentionné 1 fois. \\
+    \texttt{min\_df=3} &
+      Ignorer les mots présents dans moins de 3 documents. Supprime les hapax
+      (mots uniques, fautes) qui ne généralisent pas. \\
+    \bottomrule
+  \end{tabular}
+  \caption{Paramètres du TfidfVectorizer}
+\end{table}
+
+\textbf{Règle fondamentale — pas de fuite de données (data leakage) :}
+Le vectoriseur apprend le vocabulaire et les scores IDF \textbf{uniquement sur train}.
+Les jeux valid et test sont transformés avec ce vocabulaire figé.
+Si on calculait les IDF sur valid ou test, le modèle ``verrait'' des données futures
+et son évaluation serait artificiellement optimiste.
+
+Résultat : matrices creuses de taille $(18\,491 \times 20\,000)$ pour train,
+$(1\,000 \times 20\,000)$ pour valid et test.
+
+\subsection{Pipeline TF-IDF complet}
+
+\begin{center}
+\ttfamily\small
+\begin{tabular}{c}
+Texte brut \\
+$\downarrow$ \\
+Nettoyage (lower + chiffres + ponctuation + stopwords) \\
+$\downarrow$ \\
+TfidfVectorizer.fit\_transform(train) \\
+$\rightarrow$ Vecteur creux 20\,000 dimensions \\
+$\downarrow$ \\
+LogisticRegression / LinearSVC \\
+$\downarrow$ \\
+Prédiction : note 1 à 5 \\
+\end{tabular}
+\end{center}
+
+\subsection{Modèles entraînés}
+
+\subsubsection{Logistic Regression (régression logistique)}
+
+La régression logistique est un modèle linéaire qui prédit la probabilité d'appartenance
+à chaque classe. Pour 5 classes, elle entraîne 5 classificateurs ``one-vs-rest''
+(un par classe, chacun contre toutes les autres). Le paramètre \texttt{C=1.0}
+contrôle la régularisation L2 (pénalisation des poids trop grands pour éviter l'overfitting).
+
+\subsubsection{LinearSVC (machine à vecteurs de support linéaire)}
+
+LinearSVC cherche l'hyperplan qui sépare les classes avec la marge maximale.
+C'est un classifieur souvent plus rapide que la régression logistique sur du texte
+en haute dimension, mais il ne produit pas de probabilités — seulement des décisions.
+
+\subsection{Résultats sur la validation}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    \textbf{Modèle} & \textbf{Accuracy (taux de bonnes prédictions)} & \textbf{F1 macro (moyenne F1 par classe)} \\
+    \midrule
+    \textbf{Logistic Regression} & \textbf{63.9\,\%} & \textbf{0.516} \\
+    LinearSVC                    & 60.4\,\%          & 0.489          \\
+    \bottomrule
+  \end{tabular}
+  \caption{Résultats sur le jeu de validation — TF-IDF}
+\end{table}
+
+La régression logistique surpasse LinearSVC malgré l'intuition contraire.
+Sur des données déséquilibrées, LinearSVC tend à favoriser les grandes marges
+qui profitent aux classes majoritaires, au détriment des classes rares.
+
+\subsubsection{Détail par classe — Logistic Regression (validation)}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcccr}
+    \toprule
+    \textbf{Classe} & \textbf{Précision} & \textbf{Rappel} & \textbf{F1} & \textbf{Support} \\
+    \midrule
+    1\,$\star$ & 0.65 & 0.56 & 0.60 &  54 \\
+    2\,$\star$ & 0.39 & 0.35 & 0.37 &  82 \\
+    3\,$\star$ & 0.47 & 0.22 & \textcolor{darkred}{\textbf{0.29}} &  93 \\
+    4\,$\star$ & 0.52 & 0.52 & 0.52 & 287 \\
+    5\,$\star$ & 0.75 & 0.85 & \textcolor{darkgreen}{\textbf{0.79}} & 484 \\
+    \midrule
+    \textbf{Macro avg} & 0.56 & 0.50 & 0.52 & 1000 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Rapport de classification — Logistic Regression (validation)}
+\end{table}
+
+\textbf{Précision} (parmi les avis prédits $c$, combien sont vraiment $c$ ?) et
+\textbf{rappel} (parmi les vrais $c$, combien a-t-on correctement identifiés ?) sont
+les deux composantes du F1.
+
+\subsection{Résultats sur le jeu de test}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    \textbf{Modèle} & \textbf{Accuracy} & \textbf{F1 macro} \\
+    \midrule
+    Logistic Regression & 61.3\,\% & 0.493 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Résultats finaux sur le jeu de test — TF-IDF}
+\end{table}
+
+\subsection{Analyse des erreurs}
+
+Sur 1\,000 exemples de validation, 361 sont mal classés (36.1\,\%).
+L'analyse des écarts montre que le modèle ne se trompe jamais grossièrement :
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{cc}
+    \toprule
+    \textbf{Écart entre note réelle et prédite} & \textbf{Nb erreurs} \\
+    \midrule
+    1\,$\star$ (erreur légère) & 304 (84\,\%) \\
+    2\,$\star$ (erreur modérée) & 44 (12\,\%) \\
+    $\geq$3\,$\star$ (erreur grave) & 13 (4\,\%) \\
+    \bottomrule
+  \end{tabular}
+  \caption{Répartition des erreurs par écart — Logistic Regression}
+\end{table}
+
+\subsection{Observations et limites}
+
+\begin{itemize}
+  \item La note 3\,$\star$ (F1 = 0.29, rappel = 22\,\%) est la plus difficile : un avis
+        mitigé contient des mots positifs ET négatifs, TF-IDF ne comprend pas leur équilibre.
+  \item La note 5\,$\star$ est la mieux prédite (F1 = 0.79) grâce à sa fréquence et
+        à un vocabulaire très distinctif (``perfect'', ``excellent'', ``amazing'').
+  \item Le déséquilibre des classes est le principal facteur limitant :
+        le modèle tire ses prédictions vers les classes fréquentes.
+  \item \textbf{Ce score sert de baseline} (point de référence) : toute approche
+        ultérieure doit dépasser 61.3\,\% d'accuracy et 0.493 de F1 macro pour être utile.
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Étape 2 — Sentence Transformers}
+\label{sec:sentencetransformers}
+
+\subsection{Principe et motivation}
+
+Sentence Transformers est une famille de modèles basés sur BERT
+(Bidirectional Encoder Representations from Transformers — représentations
+bidirectionnelles de transformers encodeurs) ré-entraînés pour produire
+un \textbf{vecteur dense unique} représentant le sens global d'une phrase entière.
+
+Contrairement à TF-IDF qui compte les mots, Sentence Transformers
+\textbf{comprend le sens} grâce à un mécanisme d'attention bidirectionnelle :
+chaque mot est représenté en tenant compte de tous les autres mots de la phrase.
+
+\textbf{Modèle utilisé :} \texttt{all-MiniLM-L6-v2}
+\begin{itemize}
+  \item 6 couches Transformer (version allégée de BERT à 12 couches)
+  \item Vecteurs de 384 dimensions (denses — toutes les valeurs sont significatives)
+  \item Taille : $\approx$80\,Mo — exécutable sur CPU sans GPU
+  \item Pré-entraîné par apprentissage contrastif sur plus d'un milliard de paires de phrases :
+        deux phrases de sens proche $\rightarrow$ vecteurs proches dans l'espace,
+        deux phrases de sens opposé $\rightarrow$ vecteurs éloignés.
+\end{itemize}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Critère} & \textbf{TF-IDF} & \textbf{Sentence Transformers} \\
+    \midrule
+    Représentation    & Vecteur creux (20\,000 dim) & Vecteur dense (384 dim) \\
+    Contexte          & Aucun & Bidirectionnel \\
+    Sémantique        & Non (\og great\fg{} $\neq$ \og excellent\fg{}) & Oui \\
+    \og not good\fg{} & Similaire à \og very good\fg{} & Vecteur opposé \\
+    GPU requis        & Non & Non \\
+    Fine-tuning tâche & Non & Non \\
+    \bottomrule
+  \end{tabular}
+  \caption{Comparaison TF-IDF vs Sentence Transformers}
+\end{table}
+
+\subsection{Prétraitement — Texte brut}
+
+Contrairement à TF-IDF, \textbf{aucun nettoyage agressif} n'est appliqué ici.
+Le modèle a été pré-entraîné sur du texte brut et a appris que :
+\begin{itemize}
+  \item ``not good'' $\neq$ ``good'' (la négation change le sens — conserver ``not'')
+  \item ``Very clean!'' $\neq$ ``clean'' (l'intensité et la ponctuation portent de l'information)
+\end{itemize}
+Supprimer les stopwords ou la ponctuation \textbf{dégraderait} les embeddings.
+Seule la gestion des valeurs nulles (NaN) et un \texttt{strip()} sont effectués.
+
+\subsection{Pipeline Sentence Transformers complet}
+
+\begin{center}
+\ttfamily\small
+\begin{tabular}{c}
+Texte brut (strip uniquement) \\
+$\downarrow$ \\
+all-MiniLM-L6-v2 (modèle pré-entraîné, poids figés) \\
+$\downarrow$ \\
+Vecteur dense de 384 dimensions par avis \\
+(sauvegardé en .npy pour éviter le recalcul) \\
+$\downarrow$ \\
+LogisticRegression (C=5.0) \\
+$\downarrow$ \\
+Prédiction : note 1 à 5 \\
+\end{tabular}
+\end{center}
+
+\textbf{Pourquoi sauvegarder les embeddings en .npy ?}
+Encoder 18\,491 textes avec un transformer prend plusieurs minutes même sur CPU.
+Le format \texttt{.npy} (numpy binaire) permet de charger instantanément les vecteurs
+lors des exécutions suivantes du notebook.
+
+\textbf{Pourquoi C=5.0 au lieu de 1.0 ?}
+Les embeddings (384 dimensions denses) sont beaucoup moins bruités que les vecteurs
+TF-IDF (20\,000 dimensions creuses). La régularisation peut donc être réduite
+(C plus grand = moins de contrainte) car les features sont déjà bien structurées.
+
+\subsection{Résultats sur la validation}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    \textbf{Modèle} & \textbf{Accuracy} & \textbf{F1 macro} \\
+    \midrule
+    Sentence Transformers + LogReg & 63.1\,\% & 0.510 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Résultats sur le jeu de validation — Sentence Transformers}
+\end{table}
+
+\subsubsection{Détail par classe (validation)}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcccr}
+    \toprule
+    \textbf{Classe} & \textbf{Précision} & \textbf{Rappel} & \textbf{F1} & \textbf{Support} \\
+    \midrule
+    1\,$\star$ & 0.70 & 0.57 & 0.63 &  54 \\
+    2\,$\star$ & 0.43 & 0.51 & 0.47 &  82 \\
+    3\,$\star$ & 0.27 & 0.11 & \textcolor{darkred}{\textbf{0.15}} &  93 \\
+    4\,$\star$ & 0.54 & 0.49 & 0.52 & 287 \\
+    5\,$\star$ & 0.73 & 0.84 & \textcolor{darkgreen}{\textbf{0.78}} & 484 \\
+    \midrule
+    \textbf{Macro avg} & 0.53 & 0.51 & 0.51 & 1000 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Rapport de classification — Sentence Transformers (validation)}
+\end{table}
+
+\subsection{Résultats sur le jeu de test}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcccr}
+    \toprule
+    \textbf{Classe} & \textbf{Précision} & \textbf{Rappel} & \textbf{F1} & \textbf{Support} \\
+    \midrule
+    1\,$\star$ & 0.67 & 0.67 & 0.67 &  57 \\
+    2\,$\star$ & 0.51 & 0.53 & 0.52 &  81 \\
+    3\,$\star$ & 0.53 & 0.28 & \textcolor{darkred}{\textbf{0.37}} & 109 \\
+    4\,$\star$ & 0.51 & 0.50 & 0.51 & 287 \\
+    5\,$\star$ & 0.73 & 0.82 & \textcolor{darkgreen}{\textbf{0.77}} & 466 \\
+    \midrule
+    \textbf{Macro avg} & 0.59 & 0.56 & 0.57 & 1000 \\
+    \midrule
+    \textbf{Accuracy globale} & \multicolumn{4}{c}{\textbf{63.5\,\%} — F1 macro : \textbf{0.566}} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Rapport de classification — Sentence Transformers (test)}
+\end{table}
+
+\subsection{Analyse comparative TF-IDF vs Sentence Transformers}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lccc}
+    \toprule
+    \textbf{Classe} & \textbf{TF-IDF F1} & \textbf{SentTrans F1} & \textbf{Différence} \\
+    \midrule
+    1\,$\star$ & 0.60 & 0.63 & \textcolor{darkgreen}{+0.03} \\
+    2\,$\star$ & 0.37 & 0.47 & \textcolor{darkgreen}{+0.10} \\
+    3\,$\star$ & 0.29 & 0.15 & \textcolor{darkred}{$-$0.14} \\
+    4\,$\star$ & 0.52 & 0.52 & 0.00 \\
+    5\,$\star$ & 0.79 & 0.78 & \textcolor{darkred}{$-$0.01} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Comparaison F1 par classe : TF-IDF vs Sentence Transformers (validation)}
+\end{table}
+
+\subsection{Observations}
+
+\begin{itemize}
+  \item Sur la \textbf{validation}, Sentence Transformers est légèrement inférieur à
+        TF-IDF (F1 macro : 0.510 vs 0.516). C'est un résultat paradoxal.
+  \item Sur le \textbf{test}, Sentence Transformers surpasse nettement TF-IDF
+        (F1 macro : \textbf{0.566} vs 0.493, soit +0.073), ce qui indique
+        une \textbf{meilleure généralisation} — les embeddings sémantiques capturent
+        des patterns plus robustes que les fréquences de mots.
+  \item La note 2\,$\star$ bénéficie le plus de l'approche sémantique (+0.10 de F1) :
+        le modèle comprend le contexte négatif même quand les mots négatifs sont
+        accompagnés de nuances.
+  \item La note 3\,$\star$ s'effondre (F1 = 0.15 sur valid, rappel = 11\,\%) : le modèle
+        évite de prédire cette classe ambiguë et préfère systématiquement 2\,$\star$ ou 4\,$\star$.
+        Cela s'explique par l'absence de fine-tuning : \texttt{all-MiniLM-L6-v2} est
+        optimisé pour la similarité de phrases, pas pour la classification de sentiments graduée.
+  \item \textbf{Limite fondamentale} : les deux approches (TF-IDF et Sentence Transformers)
+        utilisent le modèle \textbf{sans l'adapter} à notre tâche. Le fine-tuning
+        de la section suivante va remédier à cela.
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Étape 3 — Fine-tuning RoBERTa}
+\label{sec:bert}
+
+\subsection{Principe — Qu'est-ce que le fine-tuning ?}
+
+Le fine-tuning (affinage) consiste à prendre un modèle pré-entraîné sur de très grandes
+quantités de données génériques, puis à le \textbf{ré-entraîner entièrement} sur nos
+données spécifiques. Tous les poids du modèle sont mis à jour — pas seulement une tête
+de classification ajoutée par-dessus.
+
+\textbf{Modèle utilisé : RoBERTa-base}
+(Robustly Optimized BERT Pretraining Approach — approche d'entraînement BERT robustement optimisée)
+\begin{itemize}
+  \item 125 millions de paramètres
+  \item 12 couches Transformer (encodeur bidirectionnel)
+  \item Vocabulaire BPE (Byte-Pair Encoding — encodage par paires d'octets) de 50\,265 tokens
+  \item Pré-entraîné sur 160\,Go de texte (Wikipedia, livres, pages web)
+  \item Amélioration de BERT : plus de données, meilleure stratégie de masquage,
+        suppression des segments de phrases (plus simple et plus efficace)
+\end{itemize}
+
+\subsection{Architecture détaillée de RoBERTa pour la classification}
+
+\begin{center}
+\ttfamily\small
+\begin{tabular}{c}
+Texte brut \\
+$\downarrow$ \\
+Tokenizer BPE (Byte-Pair Encoding) \\
+``unbelievable'' -> [``un'', ``believ'', ``able''] \\
+$\downarrow$ \\
+input\_ids [CLS, t1, t2, ..., tN, SEP, PAD, PAD, ...] + attention\_mask \\
+(max\_length = 256 tokens) \\
+$\downarrow$ \\
+Embeddings (token + position) \\
+$\downarrow$ \\
+12 couches Transformer Encoder \\
+Chaque couche : Multi-Head Self-Attention + Feed-Forward + LayerNorm \\
+$\downarrow$ \\
+Vecteur du token [CLS] (768 dimensions) \\
+[CLS] = Classification token, token special en debut de sequence \\
+      = resume le sens global de toute la phrase \\
+$\downarrow$ \\
+Dense(768 -> 768) + Dropout + Dense(768 -> 5) \\
+= Tete de classification (initialisee aleatoirement, apprise par fine-tuning) \\
+$\downarrow$ \\
+Logits (5 scores bruts, un par classe) \\
+$\downarrow$ \\
+Softmax -> Probabilites -> argmax -> Classe predite (0 a 4) \\
+$\downarrow$ \\
++1 -> Note predite (1 a 5) \\
+\end{tabular}
+\end{center}
+
+\subsubsection{Le token [CLS] — Classification Token}
+
+Le token \texttt{[CLS]} (Classification Token — token de classification) est un token
+spécial inséré automatiquement \textbf{au début} de chaque séquence par le tokenizer.
+Après avoir traversé les 12 couches Transformer, ce token a été mis à jour par
+l'attention de tous les autres tokens de la séquence. Son vecteur final (768 dimensions)
+encode donc une représentation globale de toute la phrase, utilisée comme entrée
+de la tête de classification.
+
+\subsubsection{Multi-Head Self-Attention — Mécanisme d'attention}
+
+L'attention (Attention) est le mécanisme central des Transformers. Dans chaque couche,
+chaque token ``regarde'' tous les autres tokens de la séquence et décide combien
+de poids leur accorder pour construire sa propre représentation.
+
+``Multi-head'' (multi-têtes) signifie que ce mécanisme est appliqué en parallèle
+12 fois avec des projections différentes, permettant de capturer différents types
+de relations entre les mots (syntaxe, sémantique, coréférence...).
+
+\subsection{Prétraitement — Tokenisation}
+
+Contrairement à TF-IDF, \textbf{aucun nettoyage manuel} n'est appliqué.
+Le tokenizer RoBERTa gère lui-même la normalisation.
+
+\begin{lstlisting}[caption={Tokenisation pour RoBERTa}]
+tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+
+def tokenize(texts):
+    return tokenizer(
+        texts,
+        max_length=256,        # Tronquer a 256 tokens (limite memoire GPU)
+        truncation=True,       # Couper les textes trop longs
+        padding='max_length',  # Padder les textes courts a 256
+        return_tensors='pt'    # Retourner des tenseurs PyTorch
+    )
+\end{lstlisting}
+
+\textbf{Pourquoi MAX\_LEN=256 et pas 512 ?}
+La mémoire GPU (VRAM) consommée par l'attention est quadratique avec la longueur
+de la séquence ($O(n^2)$) : doubler la longueur quadruple la mémoire.
+MAX\_LEN=256 permet un batch de 32 exemples sur le GPU T4 (15.6\,Go VRAM),
+contre un batch de 8 seulement avec MAX\_LEN=512.
+La grande majorité des avis hôtels étant inférieurs à 256 tokens, la perte
+d'information par troncature est négligeable.
+
+\textbf{Décalage des labels :}
+PyTorch \texttt{CrossEntropyLoss} (perte d'entropie croisée) exige des labels
+entiers de $0$ à $N-1$. Les notes 1--5 sont donc converties en labels 0--4
+($\text{label} = \text{Rating} - 1$). À l'évaluation, on reconvertit : $\text{note} = \text{pred} + 1$.
+
+\subsection{Dataset PyTorch et DataLoader}
+
+Pour que PyTorch puisse itérer sur les données par mini-batches (petits lots),
+les données tokenisées sont encapsulées dans une classe \texttt{Dataset} :
+
+\begin{lstlisting}[caption={Dataset PyTorch pour les avis d'hôtels}]
+class HotelDataset(Dataset):
+    def __init__(self, encodings, labels):
+        self.input_ids      = encodings['input_ids']
+        self.attention_mask = encodings['attention_mask']
+        self.labels = torch.tensor(labels, dtype=torch.long)
+
+    def __len__(self): return len(self.labels)
+
+    def __getitem__(self, idx):
+        return {
+            'input_ids'      : self.input_ids[idx],
+            'attention_mask' : self.attention_mask[idx],
+            'labels'         : self.labels[idx]
+        }
+\end{lstlisting}
+
+Le \texttt{DataLoader} (chargeur de données) utilise cette classe pour former des
+batches de taille 32, en mélangeant les exemples à chaque époque (\texttt{shuffle=True}
+sur train uniquement).
+
+\textbf{Pourquoi batch\_size=32 ?}
+Plus le batch est grand, plus les gradients sont stables (estimés sur plus d'exemples),
+et plus l'entraînement est rapide (meilleure utilisation parallèle du GPU).
+32 est la valeur maximale qui tient en VRAM avec RoBERTa-base et MAX\_LEN=256 sur T4.
+
+\subsection{Optimiseur, scheduler et hyperparamètres}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lp{9cm}}
+    \toprule
+    \textbf{Hyperparamètre} & \textbf{Valeur et justification} \\
+    \midrule
+    \textbf{Optimiseur} & AdamW (Adam avec Weight Decay découplé — régularisation L2).
+      Standard pour le fine-tuning de transformers. \\
+    \textbf{Learning rate} & $2 \times 10^{-5}$.
+      Très petit pour préserver les représentations pré-entraînées.
+      Un LR trop grand causerait le \textit{catastrophic forgetting}
+      (oubli catastrophique des connaissances acquises). \\
+    \textbf{Weight decay} & 0.01. Pénalise les poids trop grands → réduit l'overfitting. \\
+    \textbf{Époques} & 3. L'époque 2 donne le meilleur F1 valid ;
+      l'époque 3 montre un léger overfitting (valid loss qui remonte). \\
+    \textbf{Warmup} & 10\,\% des steps ($\approx$173 steps sur 1\,734 totaux).
+      Le LR monte de 0 à $2 \times 10^{-5}$ linéairement, puis redescend vers 0.
+      Stabilise les premières étapes où la tête de classification est aléatoire. \\
+    \textbf{Gradient clipping} & Norme maximale = 1.0.
+      Plafonne les gradients pour éviter les explosions de gradients,
+      phénomène courant dans les transformers profonds. \\
+    \bottomrule
+  \end{tabular}
+  \caption{Hyperparamètres RoBERTa-base}
+\end{table}
+
+\subsection{Boucle d'entraînement}
+
+À chaque époque, la boucle d'entraînement suit ce schéma sur chaque batch :
+
+\begin{center}
+\ttfamily\small
+\begin{tabular}{c}
+optimizer.zero\_grad() \\
+(reinitialiser les gradients accumules du batch precedent) \\
+$\downarrow$ \\
+Forward pass : model(input\_ids, attention\_mask, labels) \\
+-> Calcul des logits (5 scores) + CrossEntropyLoss \\
+(la loss mesure l'ecart entre la prediction et la vraie note) \\
+$\downarrow$ \\
+loss.backward() \\
+(retropropagation : calcul du gradient de chaque parametre) \\
+$\downarrow$ \\
+clip\_grad\_norm\_(model.parameters(), 1.0) \\
+(ecreter les gradients trop grands) \\
+$\downarrow$ \\
+optimizer.step() \\
+(mettre a jour les 125M parametres dans la direction opposee au gradient) \\
+$\downarrow$ \\
+scheduler.step() \\
+(ajuster le learning rate selon le profil warmup + descente lineaire) \\
+\end{tabular}
+\end{center}
+
+Après chaque époque, le modèle est évalué sur le jeu de validation.
+Le meilleur checkpoint (selon le F1 macro valid) est sauvegardé dans \texttt{best\_roberta.pt}.
+
+\textbf{Pourquoi sauvegarder selon le F1 et non l'accuracy ?}
+Sur des données déséquilibrées, l'accuracy peut augmenter même si les classes rares
+se dégradent (car les prédictions correctes sur 5\,$\star$ compensent).
+Le F1 macro pénalise les mauvaises performances sur les classes minoritaires.
+
+\subsection{Courbes d'apprentissage}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{ccccc}
+    \toprule
+    \textbf{Époque} & \textbf{Train loss} & \textbf{Valid loss} & \textbf{Accuracy valid} & \textbf{F1 macro valid} \\
+    \midrule
+    1 & 0.9442 & 0.7918 & 65.8\,\% & 0.6119 \\
+    \textbf{2} & \textbf{0.6955} & \textbf{0.7038} & \textbf{69.4\,\%} & \textbf{0.6316} $\leftarrow$ \textit{sauvegardé} \\
+    3 & 0.6064 & 0.7205 & 69.9\,\% & 0.6295 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Courbes d'apprentissage — RoBERTa-base (3 époques)}
+\end{table}
+
+\textbf{Interprétation :}
+\begin{itemize}
+  \item \textbf{Époque 1} : le modèle apprend rapidement les patterns de base.
+        La train loss (0.9442) est encore élevée — le modèle fait encore beaucoup d'erreurs.
+  \item \textbf{Époque 2} : meilleur équilibre. La valid loss (0.7038) est à son minimum
+        et le F1 macro valid (0.6316) est au plus haut → checkpoint sauvegardé.
+  \item \textbf{Époque 3} : la train loss continue de baisser (0.6064) mais la valid loss
+        remonte légèrement (0.7205) et le F1 valid baisse (0.6295).
+        C'est le signe d'un début d'\textbf{overfitting} (sur-apprentissage) :
+        le modèle mémorise les données d'entraînement au détriment de la généralisation.
+\end{itemize}
+
+\subsection{Résultats finaux — Meilleur checkpoint (époque 2)}
+
+\subsubsection{Validation}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcccr}
+    \toprule
+    \textbf{Classe} & \textbf{Précision} & \textbf{Rappel} & \textbf{F1} & \textbf{Support} \\
+    \midrule
+    1\,$\star$ & 0.80 & 0.69 & 0.74 &  54 \\
+    2\,$\star$ & 0.52 & 0.62 & 0.56 &  82 \\
+    3\,$\star$ & 0.55 & 0.41 & \textcolor{darkred}{\textbf{0.47}} &  93 \\
+    4\,$\star$ & 0.59 & 0.54 & 0.57 & 287 \\
+    5\,$\star$ & 0.79 & 0.85 & \textcolor{darkgreen}{\textbf{0.82}} & 484 \\
+    \midrule
+    \textbf{Macro avg} & 0.65 & 0.62 & 0.63 & 1000 \\
+    \midrule
+    \textbf{Accuracy} & \multicolumn{4}{c}{\textbf{69.4\,\%} — F1 macro : \textbf{0.6316}} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Rapport de classification — RoBERTa-base (validation)}
+\end{table}
+
+\subsubsection{Test}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcccr}
+    \toprule
+    \textbf{Classe} & \textbf{Précision} & \textbf{Rappel} & \textbf{F1} & \textbf{Support} \\
+    \midrule
+    1\,$\star$ & 0.69 & 0.75 & 0.72 &  57 \\
+    2\,$\star$ & 0.56 & 0.60 & 0.58 &  81 \\
+    3\,$\star$ & 0.61 & 0.35 & \textcolor{darkred}{\textbf{0.44}} & 109 \\
+    4\,$\star$ & 0.60 & 0.60 & 0.60 & 287 \\
+    5\,$\star$ & 0.81 & 0.86 & \textcolor{darkgreen}{\textbf{0.83}} & 466 \\
+    \midrule
+    \textbf{Macro avg} & 0.65 & 0.63 & 0.64 & 1000 \\
+    \midrule
+    \textbf{Accuracy} & \multicolumn{4}{c}{\textbf{70.4\,\%} — F1 macro : \textbf{0.636}} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Rapport de classification — RoBERTa-base (test) ← résultat final}
+\end{table}
+
+\subsection{Analyse des erreurs}
+
+Sur 1\,000 exemples de validation, 306 sont mal classés (30.6\,\%).
+94\,\% des erreurs ont un écart d'une seule étoile entre note réelle et note prédite —
+le modèle ne se trompe jamais grossièrement, uniquement sur les frontières floues
+(avis mitigés difficiles à distinguer entre deux notes adjacentes).
+
+\textbf{Confusions principales observées :}
+\begin{itemize}
+  \item Réel 3\,$\star$ $\rightarrow$ prédit 4\,$\star$ : erreur la plus fréquente.
+        Un avis globalement satisfait avec quelques réserves peut sembler positif.
+  \item Réel 4\,$\star$ $\rightarrow$ prédit 5\,$\star$ : frontière subjective entre
+        ``très bien'' et ``parfait''.
+  \item Réel 3\,$\star$ : le rappel de 35\,\% signifie que 65 vrais avis mitigés
+        sur 100 sont mal classés — c'est le point faible structurel du modèle.
+\end{itemize}
+
+\subsection{Observations}
+
+\begin{itemize}
+  \item \textbf{Gain majeur} par rapport aux approches précédentes : +9.1 points d'accuracy
+        et +0.143 de F1 macro par rapport à TF-IDF.
+  \item \textbf{Le fine-tuning fait la différence} : Sentence Transformers (sans fine-tuning)
+        plafonnait à 63.5\,\%. RoBERTa fine-tuné atteint 70.4\,\% — le même type de modèle
+        mais adapté à la tâche spécifique.
+  \item \textbf{La note 3\,$\star$ reste le point faible} (F1 = 0.44, rappel = 35\,\%) :
+        les avis ambigus sont intrinsèquement difficiles à classer, même pour un humain.
+  \item L'overfitting apparaît dès l'époque 3 : 3 époques est le bon compromis
+        pour ce dataset de taille modérée (18\,491 exemples).
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Comparaison générale des approches}
+\label{sec:comparaison}
+
+\subsection{Tableau récapitulatif complet}
+
+\begin{table}[H]
+  \centering
+  \begin{tabularx}{\textwidth}{Xcccc}
+    \toprule
+    \textbf{Approche} & \textbf{Acc. valid} & \textbf{F1 valid} & \textbf{Acc. test} & \textbf{F1 test} \\
+    \midrule
+    TF-IDF + LogReg              & 63.9\,\% & 0.516 & 61.3\,\% & 0.493 \\
+    TF-IDF + LinearSVC           & 60.4\,\% & 0.489 & —        & — \\
+    Sentence Transformers + LogReg & 63.1\,\% & 0.510 & 63.5\,\% & 0.566 \\
+    \textbf{RoBERTa-base fine-tuné} & \textbf{69.4\,\%} & \textbf{0.632} & \textbf{70.4\,\%} & \textbf{0.636} \\
+    \bottomrule
+  \end{tabularx}
+  \caption{Tableau comparatif de toutes les approches}
+\end{table}
+
+\subsection{Progression du F1 macro par classe}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Classe} & \textbf{TF-IDF} & \textbf{SentTrans} & \textbf{RoBERTa} & \textbf{Progression} \\
+    \midrule
+    1\,$\star$ & 0.62 & 0.67 & 0.72 & \textcolor{darkgreen}{+0.10} \\
+    2\,$\star$ & 0.39 & 0.52 & 0.58 & \textcolor{darkgreen}{+0.19} \\
+    3\,$\star$ & 0.18 & 0.37 & 0.44 & \textcolor{darkgreen}{+0.26} \\
+    4\,$\star$ & 0.49 & 0.51 & 0.60 & \textcolor{darkgreen}{+0.11} \\
+    5\,$\star$ & 0.78 & 0.77 & 0.83 & \textcolor{darkgreen}{+0.05} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Évolution du F1 par classe (test) — de TF-IDF à RoBERTa}
+\end{table}
+
+\subsection{Analyse de la progression}
+
+\subsubsection{Deux paliers de performance distincts}
+
+Les résultats révèlent deux paliers nets :
+
+\begin{itemize}
+  \item \textbf{Palier 1 — Méthodes sans fine-tuning} (61\,\%--63\,\%) :
+        TF-IDF et Sentence Transformers plafonnent dans cette zone malgré des approches
+        fondamentalement différentes. La limite vient de l'absence d'adaptation à la tâche
+        spécifique de classification de notes d'hôtels.
+  \item \textbf{Palier 2 — Fine-tuning} (70\,\%) :
+        RoBERTa fine-tuné franchit un seuil que les méthodes sans fine-tuning ne peuvent
+        pas atteindre. L'entraînement sur nos données spécifiques permet au modèle
+        de capturer des patterns propres aux avis hôteliers.
+\end{itemize}
+
+\subsubsection{La représentation est le facteur dominant}
+
+Le gain le plus important provient non pas du changement de classifieur
+(LogReg vs SVC : +3 points), mais du changement de représentation :
+\begin{itemize}
+  \item TF-IDF $\rightarrow$ Sentence Transformers : +2.2 points d'accuracy sur test
+  \item Sentence Transformers $\rightarrow$ RoBERTa fine-tuné : +6.9 points d'accuracy sur test
+\end{itemize}
+
+\subsubsection{Le déséquilibre des classes est le problème non résolu}
+
+La note 3\,$\star$ reste le point faible de \textbf{toutes} les approches,
+progressant de F1=0.18 (TF-IDF) à F1=0.44 (RoBERTa). Bien que la progression
+soit significative (+0.26), le rappel de 35\,\% pour 3\,$\star$ indique que
+65\,\% des vrais avis mitigés sont encore mal classés. Les class weights
+(pondération des classes pendant la perte) n'ont pas été appliqués
+à RoBERTa dans cette version.
+
+\subsection{Comparaison par type d'approche}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lllll}
+    \toprule
+    \textbf{Critère} & \textbf{TF-IDF} & \textbf{SentTrans} & \textbf{RoBERTa} \\
+    \midrule
+    Représentation     & Creuse, 20k dim & Dense, 384 dim  & Dense, 768 dim \\
+    Contextuelle       & Non             & Oui             & Oui \\
+    Fine-tuning tâche  & Non             & Non             & Oui \\
+    GPU requis         & Non             & Non             & Recommandé \\
+    Temps d'entraînement & Secondes      & Minutes (CPU)   & $\approx$45 min (GPU T4) \\
+    Accuracy test      & 61.3\,\%        & 63.5\,\%        & \textbf{70.4\,\%} \\
+    F1 macro test      & 0.493           & 0.566           & \textbf{0.636} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Comparaison qualitative des approches}
+\end{table}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Ce projet compare trois approches de NLP pour la classification d'avis hôteliers
+en 5 classes de sentiment (1 à 5 étoiles), sur un dataset de 18\,491 exemples
+d'entraînement fortement déséquilibré (44\,\% de notes 5\,$\star$).
+
+\textbf{Résultats clés :}
+\begin{enumerate}
+  \item \textbf{RoBERTa-base fine-tuné} est le meilleur modèle avec 70.4\,\%
+        d'accuracy et un F1 macro (moyenne harmonique précision/rappel à poids égal
+        par classe) de 0.636 sur le jeu de test.
+  \item \textbf{La représentation est le facteur dominant} : le passage de TF-IDF
+        à RoBERTa apporte +9.1 points d'accuracy, bien plus que tout changement
+        de classifieur classique.
+  \item \textbf{Le fine-tuning est essentiel} : Sentence Transformers sans fine-tuning
+        (63.5\,\%) plafonne nettement en dessous de RoBERTa fine-tuné (70.4\,\%),
+        malgré une architecture similaire.
+  \item \textbf{La note 3\,$\star$ reste le défi central} : avec un rappel de 35\,\%,
+        les avis ambigus sont intrinsèquement difficiles à classer, même pour un modèle
+        de 125 millions de paramètres.
+\end{enumerate}
+
+\textbf{Pistes d'amélioration identifiées :}
+\begin{itemize}
+  \item Fusionner les classes 3\,$\star$ et 4\,$\star$ pour passer à 4 classes distinctes.
+        La note 3\,$\star$ est structurellement ambiguë : ses avis partagent un vocabulaire
+        proche de la note 4\,$\star$ (satisfaction mitigée mais globalement positive),
+        ce qui explique qu'elle soit la classe la plus mal prédite dans tous les modèles testés.
+        Cette fusion réduirait mécaniquement les confusions et améliorerait le F1 macro.
+  \item Appliquer des class weights (pondération des classes minoritaires) dans la
+        fonction de perte CrossEntropyLoss pour RoBERTa, afin de pénaliser davantage
+        les erreurs sur les notes rares.
+  \item Combinaison par ensemble (vote ou moyenne des logits) des prédictions de
+        plusieurs modèles pour gagner quelques points supplémentaires.
+\end{itemize}
+
+\end{document}

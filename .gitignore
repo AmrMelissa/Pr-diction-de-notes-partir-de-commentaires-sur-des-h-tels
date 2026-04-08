@@ -1,0 +1,7 @@
+venv/
+.DS_Store
+__pycache__/
+*.pyc
+
+Fine-tuning BERT Colab/best_roberta.pt
+Fine-tuning BERT/best_roberta_model.pt

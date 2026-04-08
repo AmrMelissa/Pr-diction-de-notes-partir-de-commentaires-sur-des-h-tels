@@ -1,0 +1,19 @@
+# ─── Données & utilitaires ────────────────────────────────────────────────────
+pandas==2.2.2
+numpy>=1.26.0
+
+# ─── Machine Learning classique (TF-IDF + LogisticRegression + LinearSVC) ─────
+scikit-learn==1.5.1
+
+# ─── Traitement du texte ──────────────────────────────────────────────────────
+nltk==3.9.1
+
+# ─── Visualisation ────────────────────────────────────────────────────────────
+matplotlib==3.9.2
+seaborn==0.13.2
+
+# ─── Deep Learning & BERT (fine-tuning) ───────────────────────────────────────
+torch>=2.0.0
+transformers>=4.40.0
+datasets>=2.19.0
+accelerate>=0.29.0
